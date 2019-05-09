@@ -1,0 +1,6 @@
+README.md
+setup.py
+xptools.egg-info/PKG-INFO
+xptools.egg-info/SOURCES.txt
+xptools.egg-info/dependency_links.txt
+xptools.egg-info/top_level.txt
