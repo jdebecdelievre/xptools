@@ -4,6 +4,8 @@ import pdb
 import cvxpy as cp
 import matplotlib.pyplot as plt
 import numpy as np
+import os
+import pandas as pd
 from cvxpy.error import SolverError
 
 def hampel_filter(data_orig, k=7, t0=3, sigma_noise=0.02, replace_by_median=False):
@@ -47,8 +49,7 @@ def hampel_filter(data_orig, k=7, t0=3, sigma_noise=0.02, replace_by_median=Fals
 
     return(data)
 
-
-def FusedLassoFilter(D,smoothness, degree=6, order=3):
+def FusedLassoFilter(D,smoothness, huber_m=1.0, degree=6, order=3):
 
     # params
     n = D.shape[0]
@@ -65,11 +66,13 @@ def FusedLassoFilter(D,smoothness, degree=6, order=3):
     l = cp.Parameter(nonneg=True, value=smoothness)
 
     # Form objective.
-    obj = cp.Minimize(cp.norm1(A6 @ x) + cp.sum_squares(A3 @ x))
-    con = [nonNan@cp.square((x - D_))/n_ <= l]
+    obj = cp.Minimize(cp.norm1(A6 @ x) + cp.sum_squares(A3 @ x) + l*nonNan@cp.huber((x - D_), M=huber_m))
+#     obj = cp.Minimize(cp.norm1(A6 @ x) + l*nonNan@cp.square((x - D_))/n_)
+                      
+#     con = [nonNan@cp.square((x - D_))/n_ <= l]
 
     # Form and solve problem.
-    prob = cp.Problem(obj, con)
+    prob = cp.Problem(obj)
     prob.solve(warm_start=True)
 
     # assert(prob.status == "optimal"), "Filtering did not converge"
@@ -77,7 +80,7 @@ def FusedLassoFilter(D,smoothness, degree=6, order=3):
     return x.value, prob.status
 
 
-def FusedLassoCrossValidation(D, s_table, nn=10, degree=6, order=3):
+def FusedLassoCrossValidation(D, s_table, huber_m=1.0, nn=10, degree=6, order=3, dt=1.0):
     '''
     For each smoothness parameter in s_table, this function estimates the generalization error. It repeatedly - nn times -
     randomly holds out 20% of the data, performs the fit and evaluates the error in the held out data. The error for one
@@ -93,24 +96,28 @@ def FusedLassoCrossValidation(D, s_table, nn=10, degree=6, order=3):
 
     # Localize NaN
     nonNan = sp.diags(1.0 - np.isnan(D))
-    n_ = cp.Parameter(nonneg=True, value=np.sum(nonNan))
+    n_0 = np.sum(nonNan)
+    n_ = cp.Parameter(nonneg=True, value=n_0)
     kpt = cp.Parameter(shape=n0, value=nonNan@np.ones(n0), nonneg=True)
 
     # Create optimization problem
-    A6 = fd_matrix_parsi(n0, degree, order, dt=1.0)
+    A6 = fd_matrix_parsi(n0, degree, order, dt)
     A3 = fd_matrix_parsi(n0, dt=1, degree=3, order=2)
 
-    obj = cp.Minimize(cp.norm1(A6 @ x) + cp.sum_squares(A3 @ x))
-    con = [kpt @cp.square(x - D_) / n_ <= l]
-    prob = cp.Problem(obj, con)
+    obj = cp.Minimize(cp.norm1(A6 @ x) + cp.sum_squares(A3 @ x) + l*kpt @cp.huber(x - D_, M=huber_m))
+#     obj = cp.Minimize(cp.norm1(A6 @ x) + l*kpt @cp.square(x - D_)/n_)
+#     con = [kpt @cp.square(x - D_) / n_ <= l]
+    prob = cp.Problem(obj)
 
     # Create cross-validation data
     kept_indices = np.zeros((nn, n0))
+    fld = np.tile(np.array(range(nn)),n0//nn + 1)[:n0]
     for i in range(nn):
         kept = np.ones(n0)
-        indices = np.sort(np.random.choice(n0 - 2, n0 - n, replace=False)) + 1
-        kept[indices] = 0
-        kept_indices[i] = kept
+#         indices = np.sort(np.random.choice(n0 - 2, n0 - n, replace=False)) + 1
+#         kept[indices] = 0
+#         kept_indices[i] = kept
+        kept_indices[i] = (fld == i)
 
     def evaluate(s, i):
         l.value = s
@@ -121,7 +128,7 @@ def FusedLassoCrossValidation(D, s_table, nn=10, degree=6, order=3):
         except SolverError:
             print("solver crashed when solving fold {} with smoothness {}. Setting error to NaN.".format(i,s))
             return np.nan
-        return (np.logical_not(kept_indices[i]) @ (nonNan @ (x.value - D_)) ** 2)
+        return (np.logical_not(kept_indices[i]) @ (nonNan @ (x.value - D_)) ** 2)/(n_0 - n_.value)
 
     error = [0] * len(s_table)
     err = [0] * nn
@@ -130,7 +137,75 @@ def FusedLassoCrossValidation(D, s_table, nn=10, degree=6, order=3):
             err[i] = evaluate(s, i)
         error[i_s] = sum(err)
 
-    return (error)
+    return error
+
+
+def ParallelCrossValidation(fields, s_table, params, cv_params, files, meta_dir, data, smoothness):
+    for field in fields:
+        errors_table = np.array(Parallel(n_jobs=5)(delayed(
+            FusedLassoCrossValidation)(data[file][field], s_table, params['fused_lasso_filter']['huber_m'][field], cv_params['number_random_folds']) for file in files))
+        # FusedLassoCrossValidation(data['trajectory77.csv'][field], s_table, cv['number_random_folds'])
+        
+        errors = np.sum(errors_table, axis=0)
+        smoothness[field] = s_table[np.argmin(errors)]
+
+        # plot mean error versus smoothness parameter
+        plt.figure(figsize=(10,6))
+        plt.loglog(s_table, errors)
+        plt.grid(True)
+        plt.xlabel('smoothness parameter')
+        plt.ylabel(f'Summed CV error on all trajectories for {field}')
+        plt.grid(True)
+        plt.scatter(np.argmin(errors), smoothness[field], s=80, facecolors='none', edgecolors='r')
+        plt.savefig(os.path.join(meta_dir,'crossvalid_' + field + '.png'))
+        plt.close()
+        errors[np.isnan(errors)] = 1e10
+        
+
+        # Show error for each trajectory
+        traj_lbl = [f.split('.')[0] for f in files]
+        nt = errors_table.shape[0]
+        plt.figure(figsize=(15, 5))
+        plt.semilogy(range(nt), errors_table[:, np.argmin(errors)], '+')
+        plt.xticks(ticks=np.array(range(nt)), labels=traj_lbl, rotation=45)
+        plt.grid(True)
+        plt.title(f'CV error on {field} for each trajectory at best smoothness parameter.')
+        plt.savefig(os.path.join(meta_dir,'crossvalid_bestFit_' + field + '.png'))
+        plt.close()
+
+        # Heat map of errorsop
+        
+        s_lbl = [f'{s:.2}' for s in s_table]
+        fig, ax = plt.subplots(figsize=(len(s_lbl)*1./len(traj_lbl), 5))
+        im = ax.imshow(errors_table)
+        cbar = ax.figure.colorbar(im, ax=ax)
+        cbar.ax.set_ylabel('CV error magnitude', rotation=-90, va="bottom")
+        ax.set_xticks(np.arange(len(s_lbl)))
+        ax.set_yticks(np.arange(len(traj_lbl)))
+        ax.set_xticklabels(s_lbl)
+        ax.set_yticklabels(traj_lbl)
+        plt.setp(ax.get_xticklabels(), rotation=45, ha="right",
+                rotation_mode="anchor")
+
+        # Loop over data dimensions and create text annotations.
+        for i in range(len(traj_lbl)):
+            for j in range(len(s_lbl)):
+                text = ax.text(j, i, f'{errors_table[i, j]:.2}',
+                            ha="center", va="center", color="w")
+        # Turn spines off and create white grid.
+        for edge, spine in ax.spines.items():
+            spine.set_visible(False)
+
+        ax.set_title("Heatmap of cross validation errors for each trajectory")
+        fig.tight_layout()
+        plt.savefig(os.path.join(meta_dir,'crossvalid_heatmap_' + field + '.png'))
+
+        # Save Errors
+        errors = pd.DataFrame(data=errors_table.T, columns=[f.split('.')[0] for f in files])
+        errors['s_table'] = s_table
+        errors.to_csv(os.path.join(meta_dir,'cross_validation_errors_'+field+'.csv'), index=False) 
+
+    return smoothness, errors_table 
 
 
 def FusedLassoFilterQuat(D,smoothness, degree, order):

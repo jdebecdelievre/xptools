@@ -3,9 +3,11 @@ import csv
 import numpy as np
 from collections import defaultdict
 import quaternion
-from vocab import *
+from xptools.vocab import *
 from pyfme.utils.change_euler_quaternion import quatern2euler, euler2quatern, rotate_vector
 from pyfme.utils.coordinates import body2wind
+import glob
+import os
 
 from scipy.signal import filtfilt
 from pyfme.utils.anemometry import calculate_alpha_beta_TAS
@@ -87,7 +89,7 @@ def readMotiveFile(file, rigid_body, all_markers = False, position_only=False):
             names[0] = 'Time'
         _dat = pd.read_csv(file, skiprows=7, usecols=columns[marker_name], header=None, names=names)
         
-        # renames columns according to raw2clean in vocab.py and swap axis to z-up
+        # renames columns according to raw2clean in vocab.py and swap axis from y-up to z-down
         _dat.rename(columns=raw2clean,inplace=True)
         data[marker_name] = swap_axis(_dat)
 
@@ -294,3 +296,40 @@ def unwrap_euler(data):
     data['phi'] = np.unwrap(data.phi)
     data['psi'] = np.unwrap(data.psi)
     data['theta'] = np.unwrap(data.theta * 2) / 2
+
+def quatFile2MRP(ini_folder, dest_folder):
+    # Reference : Analytical Mechanics of Space Systems, Schaub & Junkins
+    files = glob.glob(ini_folder + '/*.csv')
+    # print('Found files : ', *(f+'\n' for f in files))
+    if not os.path.isdir(dest_folder):
+        os.mkdir(dest_folder)
+    for f in files:
+        data = pd.read_csv(f)
+
+        # Make all trajectories go in the same direction
+        if data.x_e[:10].mean() > data.x_e[-10:].mean():
+            data[['x_e','y_e']] *= -1
+            temp_quat = data[quat].copy()
+            data.q0 =  -temp_quat.qz
+            data.qx =  -temp_quat.qy
+            data.qy =  temp_quat.qx
+            data.qz =  temp_quat.q0
+
+        # Compute MRP
+        mrp_data = data[pos+time].copy()
+        mrp_data['sx'] = data.qx / (1 + data.q0)
+        mrp_data['sy'] = data.qy / (1 + data.q0)
+        mrp_data['sz'] = data.qz / (1 + data.q0)
+
+        # Switch to shadow MRP if the initial point is outside the unit disk
+        if (mrp_data.loc[0, mrp]**2).sum() > 1:
+            mrp_data[mrp] = - mrp_data[mrp].div( (mrp_data[mrp]**2).sum(axis=1), axis=0)
+
+        mrp_data.to_csv(os.path.join(dest_folder, os.path.basename(f)))
+
+    
+def flip_qtr(data):
+    for i in range(1,len(data)):
+        if (data[quat].loc[i] * data[quat].loc[i-1] < 0).all():
+            data[quat].loc[i] *= -1
+    return data 

@@ -1,1 +1,9 @@
- 
+# Notebooks
+*.ipynb
+
+# Images
+*.png
+*.gif
+
+# pycache stuff
+xptools/__pycache__/*

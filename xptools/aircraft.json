@@ -1,0 +1,70 @@
+{
+    "Fuselage": {
+        "length": 0.6,
+        "nose weight": 0.005
+    },
+    "mass": 0.06,
+    "CGlocation": 0.265976,
+    "pivot_point_location": [
+        0.0,
+        0.0,
+        0.0
+    ],
+    "Wing": {
+        "span": 0.8,
+        "root chord": 0.06,
+        "tip chord": 0.04,
+        "leading edge": 0.25,
+        "leading edge tip": 0.27
+    },
+    "Htail": {
+        "span": 0.2,
+        "root chord": 0.0635,
+        "tip chord": 0.0381,
+        "leading edge": 0.56,
+        "leading edge tip": 0.57
+    },
+    "Vtail": {
+        "span": 0.1,
+        "root chord": 0.05,
+        "tip chord": 0.025,
+        "leading edge": 0.5,
+        "leading edge tip": 0.525
+    },
+    "balsa_density": 138.0,
+    "balsa_thickness": 0.002,
+    "carbon_linear_density": 0.02787,
+    "extra_mass_elements": {
+        "paper_clip": {
+            "location_in_nose_frame": [
+                -1.32988,
+                0.0,
+                0.0
+            ],
+            "mass": 0.06
+        }
+    },
+    "inertia": [
+        [
+            0.0005409738000000002,
+            0,
+            -1.2274479000000002e-05
+        ],
+        [
+            0,
+            0.10736534076014607,
+            0
+        ],
+        [
+            -1.2274479000000002e-05,
+            0,
+            0.10790465344903497
+        ]
+    ],
+    "mass_measurements": {
+        "distance_between_scales": null,
+        "front_scale_to_nose": null,
+        "front_scale": null,
+        "back_scale": null
+    }
+}

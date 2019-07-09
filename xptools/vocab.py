@@ -13,6 +13,7 @@ vel = ['u', 'v', 'w']
 frc = ['fx','fy','fz']
 mom = ['mx','my','mz']
 time = ['time']
+mrp = ['sx', 'sy', 'sz'] # modified rodriguez parameters
 raw2clean = dict(zip(pos_raw+quat_raw+['Time'],pos+quat+time))
 
 # Derivative
@@ -65,6 +66,7 @@ col_titles.update(dict(zip(aerof,aerof)))
 col_titles.update(dict(zip(aerocf,aerocf)))
 col_titles.update(dict(zip(aerocm,aerocm)))
 col_titles.update(dict(zip(perf, ['L/D'])))
+col_titles.update(dict(zip(mrp, ['$\sigma_x$', '$\sigma_y$', '$\sigma_z$'])))
 
 
 # Associated css colors
